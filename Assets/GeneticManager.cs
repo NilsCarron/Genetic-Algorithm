@@ -1,55 +1,63 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+
 using MathNet.Numerics.LinearAlgebra;
-using Random = UnityEngine.Random;
-using Range = UnityEngine.SocialPlatforms.Range;
 
 public class GeneticManager : MonoBehaviour
 {
-    [Header("Refernces")] public CarController controller;
+    [Header("References")]
+    public CharacterController controller;
 
-
-    [Header("Controls")] 
-    public int initialPopulation = 90;
-    [Range(0.0f, 1.0f)] 
+    [Header("Controls")]
+    //The amount of characters per generation
+    public int initialPopulation = 85;
+    [Range(0.0f, 1.0f)]
+    //The higher, the less the character takes care of the last generation
     public float mutationRate = 0.055f;
 
-    [Header("Crossover Controls")] 
+    [Header("Crossover Controls")]
+    //This values can be tweaked
+    //how much of the best genome we need to create the crossover
     public int bestAgentSelection = 8;
+    //how much of the worst genome we need to create the crossover
     public int worstAgentSelection = 3;
     public int numberToCrossover;
 
-    private List<int> genePool = new List<int>();
-    private int naturallySelected;
+    private List<int> _genePool = new List<int>();
 
-    private NeuralNetwork[] population;
+    private int _naturallySelected;
 
-    [Header("Public View")] 
+    private NeuralNetwork[] _population;
+
+    [Header("Public View")]
+    //Only gives informations about the current character
     public int currentGeneration;
-    public int currentGenome;
+    public int currentGenome = 0;
 
     private void Start()
     {
         CreatePopulation();
     }
 
+    
+    /// <summary>This method creates the first population with random values.</summary>
     private void CreatePopulation()
     {
-        population = new NeuralNetwork[initialPopulation];
-        FillPopulationWithRandomValues(population, 0);
+        _population = new NeuralNetwork[initialPopulation];
+        FillPopulationWithRandomValues(_population, 0);
         ResetToCurrentGenome();
-        
     }
 
+    /// <summary>This will give the character its corresponding network. Called on creating the character</summary>
     private void ResetToCurrentGenome()
     {
-        controller.ResetWithNetwork(population[currentGenome]);
-        
+        controller.ResetWithNetwork(_population[currentGenome]);
     }
-
-    private void FillPopulationWithRandomValues(NeuralNetwork[] newPopulation, int startingIndex)
+    /// <summary>Will be called upon generating random values in the networks.</summary>
+    /// <param name="newPopulation">Newly created neural network</param>
+    /// <param name="startingIndex">Amount of character that won't be randomized (the naturally selected ones)</param>
+    private void FillPopulationWithRandomValues (NeuralNetwork[] newPopulation, int startingIndex)
     {
         while (startingIndex < initialPopulation)
         {
@@ -57,248 +65,262 @@ public class GeneticManager : MonoBehaviour
             newPopulation[startingIndex].Initialise(controller.LAYERS, controller.NEURONS);
             startingIndex++;
         }
-        
     }
-
-    public void Death(float fitness, NeuralNetwork network)
+    /// <summary>called upon destruction to collect all the informations.</summary>
+    /// <param name="fitness">The "score" the character made before its death </param>
+    /// <param name="network">The neural network of the deceased character</param>
+    public void Death (float fitness, NeuralNetwork network)
     {
-        if (currentGenome < population.Length - 1)
+        
+        if (currentGenome < _population.Length -1)
         {
-            population[currentGenome].fitness = fitness;
+
+            _population[currentGenome].fitness = fitness;
             currentGenome++;
             ResetToCurrentGenome();
+
         }
+        //no more genomes remaining in the generation, we create a new one
         else
         {
-            Repopulate();
-
+            RePopulate();
         }
+
     }
 
-
-    private void Repopulate()
+    
+    
+    /// <summary>Called upon the death of the last genome of the generation.</summary>
+    private void RePopulate()
     {
-        genePool.Clear();
+        //remove all genomes of the current pool
+        _genePool.Clear();
         currentGeneration++;
-        naturallySelected = 0;
+        _naturallySelected = 0;
+        //sorting the deceased populations per their fitness
         SortPopulation();
-        NeuralNetwork[] newPopulation = pickBestPopulation();
+        //We take the best population, identified thanks to the sorting previously done
+        NeuralNetwork[] newPopulation = PickBestPopulation();
+        
+        //refill the pool
         Crossover(newPopulation);
+        //mutate some characters in the generation, according to the mutation rate
         Mutate(newPopulation);
         
-        FillPopulationWithRandomValues(newPopulation, naturallySelected);
+        //fill randomly, excepted for the naturally selected
+        FillPopulationWithRandomValues(newPopulation, _naturallySelected);
+        
+        _population = newPopulation;
 
-        population = newPopulation;
         currentGenome = 0;
+
         ResetToCurrentGenome();
+
     }
 
-    private void Mutate(NeuralNetwork[] newPopulation)
+    /// <summary>Will fill the population with random values according to the mutation rate.</summary>
+    /// <param name="newPopulation">Population in wich you want to pute mutations</param>
+    private void Mutate (NeuralNetwork[] newPopulation)
     {
-        for (int i = 0; i < naturallySelected; i++)
+
+        for (int index = 0; index < _naturallySelected; index++)
         {
-            for (int j = 0; j < newPopulation[i].weights.Count; j++)
+
+            for (int indexWeights = 0; indexWeights < newPopulation[index].weights.Count; indexWeights++)
             {
+
                 if (Random.Range(0.0f, 1.0f) < mutationRate)
                 {
-                    newPopulation[i].weights[j] = MutateMatrix(newPopulation[i].weights[j]);
+                    newPopulation[index].weights[indexWeights] = MutateMatrix(newPopulation[index].weights[indexWeights]);
+                }
+
+            }
+
+        }
+
+    }
+    
+    /// <summary>This function randomize the weights of a matrix.</summary>
+    /// <param name="matrixOfWeights">Forward left Raycast result</param>
+    /// <returns name = "randomizedMatrix">The randomized matrix according to the mutation rate</returns>
+    Matrix<float> MutateMatrix (Matrix<float> matrixOfWeights)
+    {
+
+        int randomPoints = Random.Range(1, (matrixOfWeights.RowCount * matrixOfWeights.ColumnCount) / 7);
+
+        Matrix<float> randomizedMatrix = matrixOfWeights;
+
+        for (int index = 0; index < randomPoints; index++)
+        {
+            int randomColumn = Random.Range(0, randomizedMatrix.ColumnCount);
+            int randomRow = Random.Range(0, randomizedMatrix.RowCount);
+
+            randomizedMatrix[randomRow, randomColumn] = Mathf.Clamp(randomizedMatrix[randomRow, randomColumn] + Random.Range(-1f, 1f), -1f, 1f);
+        }
+
+        return randomizedMatrix;
+
+    }
+    /// <summary>Called to refresh a generation with "childs" of the previous characters.</summary>
+    /// <param name="newPopulation">the new population w ehave to create</param>
+    private void Crossover (NeuralNetwork[] newPopulation)
+    {
+        //create random crossovers in the genepool
+        for (int index = 0; index < numberToCrossover; index+=2)
+        {
+            int aIndex = index;
+            int bIndex = index + 1;
+
+            if (_genePool.Count >= 1)
+            {
+                for (int infiniteIndex = 0; infiniteIndex < 100; infiniteIndex++)
+                    //we repeat it 100 times, to take 2 different parents (index A and B) 
+                    //This is probably not the best way to do it, but it is quite simple to avoid most bugs
+                {
+                    aIndex = _genePool[Random.Range(0, _genePool.Count)];
+                    bIndex = _genePool[Random.Range(0, _genePool.Count)];
                     
-                }
-            }
-        }
-    }
-
-    private Matrix<float> MutateMatrix(Matrix<float> weight)
-    {
-        int RandomPoints = Random.Range(1, (weight.RowCount * weight.ColumnCount) / 7);
-        Matrix<float> C = weight;
-        for (int i = 0; i < RandomPoints; i++)
-        {
-            int randomCollumn = Random.Range(0, C.ColumnCount);
-            int randomRow = Random.Range(0, C.ColumnCount);
-            C[randomRow, randomCollumn] = Mathf.Clamp(C[randomRow, randomCollumn] + Random.Range(-1f, 1f), -1f, 1f);
-            
-        }
-
-        return C;
-    }
-
-
-    private void Crossover(NeuralNetwork[] newPopulation)
-    {
-        for (int i = 0; i < numberToCrossover; i ++)
-        {
-            int AIndex = i;
-            int BIndex = i+1;
-
-            if (genePool.Count >= 1)
-            {
-                for (int l = 0; l < 100; l++)
-                {
-                    AIndex = genePool[Random.Range(0, genePool.Count)];
-                    BIndex = genePool[Random.Range(0, genePool.Count)];
-
-                    if (AIndex != BIndex)
+                    if (aIndex != bIndex)
                         break;
-
                 }
             }
+            //once we're here, we found 2 differents parents to realise the crossover
+            //We generate two new characters called "Child1" and "Child2"
+            NeuralNetwork child1 = new NeuralNetwork();
+            NeuralNetwork child2 = new NeuralNetwork();
+            child1.Initialise(controller.LAYERS, controller.NEURONS);
+            child2.Initialise(controller.LAYERS, controller.NEURONS);
+            child1.fitness = 0;
+            child2.fitness = 0;
 
-            NeuralNetwork Child1 = new NeuralNetwork();
-            NeuralNetwork Child2= new NeuralNetwork();
-            Child1.Initialise(controller.LAYERS, controller.NEURONS);
-            Child2.Initialise(controller.LAYERS, controller.NEURONS);
-            Child1.fitness = 0;
-            Child2.fitness = 0;
-
-            for (int w = 0; w < Child1.weights.Count; w++)
+            //Iterating on the weights of the childs
+            for (int indexOfChildWeights = 0; indexOfChildWeights < child1.weights.Count; indexOfChildWeights++)
             {
+                //We add some more random with this coin flip to keep the child 1 or 2 in the position aIndex or bIndex
+                //This is the crossover in itself for the  weights
                 if (Random.Range(0.0f, 1.0f) < 0.5f)
                 {
-                    Child1.weights[w] = population[AIndex].weights[w];
-                    Child2.weights[w] = population[BIndex].weights[w];
-
+                    child1.weights[indexOfChildWeights] = _population[aIndex].weights[indexOfChildWeights];
+                    child2.weights[indexOfChildWeights] = _population[bIndex].weights[indexOfChildWeights];
                 }
                 else
                 {
-                    Child2.weights[w] = population[AIndex].weights[w];
-                    Child1.weights[w] = population[BIndex].weights[w];
+                    child2.weights[indexOfChildWeights] = _population[aIndex].weights[indexOfChildWeights];
+                    child1.weights[indexOfChildWeights] = _population[bIndex].weights[indexOfChildWeights];
                 }
-                
+
             }
-            
-            for (int w = 0; w < Child1.biases.Count; w++)
+
+            //We do the same for the biases
+            for (int indexOfChildBiases = 0; indexOfChildBiases < child1.biases.Count; indexOfChildBiases++)
             {
+
                 if (Random.Range(0.0f, 1.0f) < 0.5f)
                 {
-                    Child1.biases[w] = population[AIndex].biases[w];
-                    Child2.biases[w] = population[BIndex].biases[w];
-
+                    child1.biases[indexOfChildBiases] = _population[aIndex].biases[indexOfChildBiases];
+                    child2.biases[indexOfChildBiases] = _population[bIndex].biases[indexOfChildBiases];
                 }
                 else
                 {
-                    Child2.biases[w] = population[AIndex].biases[w];
-                    Child1.biases[w] = population[BIndex].biases[w];
+                    child2.biases[indexOfChildBiases] = _population[aIndex].biases[indexOfChildBiases];
+                    child1.biases[indexOfChildBiases] = _population[bIndex].biases[indexOfChildBiases];
                 }
-                
+
+
+
             }
+        
+            newPopulation[_naturallySelected] = child1;
+            _naturallySelected++;
 
-            newPopulation[naturallySelected] = Child1;
-            
-            newPopulation[naturallySelected] = Child2;
-            naturallySelected += 2;
-
+            newPopulation[_naturallySelected] = child2;
+            _naturallySelected++;
+            //We add the two new childs
         }
     }
 
-
-    private NeuralNetwork[] pickBestPopulation()
+    
+    
+    /// <summary>This function will add the best and the worst characters in the future genepool.</summary>
+    /// <returns name="newPopulation"> The new generation with the naturallyselected characters </returns>
+    private NeuralNetwork[] PickBestPopulation()
     {
+        //create new population
         NeuralNetwork[] newPopulation = new NeuralNetwork[initialPopulation];
-        for (int i = 0; i < bestAgentSelection; ++i)
+        //Iterate on the number of best characters asked
+        for (int indexBestToTake = 0; indexBestToTake < bestAgentSelection; indexBestToTake++)
         {
-            newPopulation[naturallySelected] = population[i].InitialsieCopy(controller.LAYERS, controller.NEURONS);
-            newPopulation[naturallySelected].fitness = 0;
             
-            naturallySelected++;
-            int f = Mathf.RoundToInt(population[i].fitness * 10);
-            for (int j = 0; j < f++; j++)
-            {
-                genePool.Add(i);
-                
-            }
+            newPopulation[_naturallySelected] = _population[indexBestToTake].InitialiseCopy(controller.LAYERS, controller.NEURONS);
+            newPopulation[_naturallySelected].fitness = 0;
+            _naturallySelected++;
             
-            
-        }
+            int fitnessToInerit = Mathf.RoundToInt(_population[indexBestToTake].fitness * 10);
 
-        for (int i = 0; i < worstAgentSelection; i++)
-        {
-            int last = population.Length - 1;
-            last -= i;
-            int f = Mathf.RoundToInt(population[last].fitness * 10);
-            for (int j = 0; j < f++; j++)
+            for (int indexOnFitness = 0; indexOnFitness < fitnessToInerit; indexOnFitness++)
             {
-                genePool.Add(last);
-                
+                _genePool.Add(indexBestToTake);
             }
+
+        }
+        //Iterate on the number of worst characters asked
+        for (int indexWorstToTake = 0; indexWorstToTake < worstAgentSelection; indexWorstToTake++)
+        {
+            int last = _population.Length - 1;
+            last -= indexWorstToTake;
+
+            int fitnessToInerit = Mathf.RoundToInt(_population[last].fitness * 10);
+
+            for (int indexOnFitness = 0; indexOnFitness < fitnessToInerit; indexOnFitness++)
+            {
+                _genePool.Add(last);
+            }
+
         }
 
         return newPopulation;
-        
 
     }
 
-    /*private void SortPopulation()
-    {
-        for (int i = 0; i < population.Length; i++)
-        {
-            for (int j = i; j < population.Length; j++)
-            {
-                if (population[i].fitness < population[j].fitness)
-                {
-                    NeuralNetwork temp = population[i];
-                    population[i] = population[j];
-                    population[j] = temp;
-                }
-            }
-        }
-
-    }*/
-    private static void Quick_Sort(NeuralNetwork[] arr, int left, int right) 
-    {
-        if (left < right)
-        {
-            int pivot = Partition(arr, left, right);
-
-            if (pivot > 1) {
-                Quick_Sort(arr, left, pivot - 1);
-            }
-            if (pivot + 1 < right) {
-                Quick_Sort(arr, pivot + 1, right);
-            }
-        }
-        
-    }
-
-    private static int Partition(NeuralNetwork[] arr, int left, int right)
-    {
-        float pivot = arr[left].fitness;
-        while (true) 
-        {
-
-            while (arr[left].fitness < pivot) 
-            {
-                left++;
-            }
-
-            while (arr[right].fitness > pivot)
-            {
-                right--;
-            }
-
-            if (left < right)
-            {
-                if (arr[left] == arr[right]) return right;
-
-                NeuralNetwork temp = arr[left];
-                arr[left] = arr[right];
-                arr[right] = temp;
-
-
-            }
-            else 
-            {
-                return right;
-            }
-        }
-    }
-
-    
-    
-    
-
+    /// <summary>.</summary>
     private void SortPopulation()
     {
-        Quick_Sort(population, 0, population.Length);
+        //Simple QuickSort
+        SortArray(_population, 0, _population.Length - 1);
+       
+
     }
+    public NeuralNetwork[] SortArray(NeuralNetwork[] array, int leftIndex, int rightIndex)
+    {
+        var i = leftIndex;
+        var j = rightIndex;
+        var pivot = array[leftIndex].fitness;
+        while (i <= j)
+        {
+            while (array[i].fitness < pivot)
+            {
+                i++;
+            }
+        
+            while (array[j].fitness > pivot)
+            {
+                j--;
+            }
+            if (i <= j)
+            {
+                NeuralNetwork temp = array[i];
+                array[i] = array[j];
+                array[j] = temp;
+                i++;
+                j--;
+            }
+        }
+    
+        if (leftIndex < j)
+            SortArray(array, leftIndex, j);
+        if (i < rightIndex)
+            SortArray(array, i, rightIndex);
+        return array;
+    }
+    
 }
